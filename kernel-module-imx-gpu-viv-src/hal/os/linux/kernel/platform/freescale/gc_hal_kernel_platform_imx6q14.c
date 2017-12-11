@@ -443,12 +443,12 @@ gckPLATFORM_AdjustParam(
     }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
-       Args->contiguousBase = 0;
+    Args->contiguousBase = 0;
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
-       prop = of_get_property(dn, "contiguousbase", NULL);
-       if(prop)
-               Args->contiguousBase = *prop;
-       of_property_read_u32(dn,"contiguoussize", (u32 *)&contiguousSize);
+    prop = of_get_property(dn, "contiguousbase", NULL);
+    if (prop)
+            Args->contiguousBase = *prop;
+    of_property_read_u32(dn,"contiguoussize", (u32 *)&contiguousSize);
 #else
     pdata = pdev->dev.platform_data;
     if (pdata) {
@@ -461,8 +461,8 @@ gckPLATFORM_AdjustParam(
 
     Args->gpu3DMinClock = initgpu3DMinClock;
 
-  if(Args->physSize == 0)
-    Args->physSize = 0x80000000;
+    if (Args->physSize == 0)
+        Args->physSize = 0x80000000;
 
     return gcvSTATUS_OK;
 }
