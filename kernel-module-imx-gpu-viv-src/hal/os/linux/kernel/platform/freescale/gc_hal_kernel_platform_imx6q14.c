@@ -359,7 +359,11 @@ MODULE_DEVICE_TABLE(of, mxs_gpu_dt_ids);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
 struct contiguous_mem_pool {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
     struct dma_attrs attrs;
+#else
+    unsigned long attrs;
+#endif
     dma_addr_t phys;
     void *virt;
     size_t size;
