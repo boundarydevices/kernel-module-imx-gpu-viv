@@ -4957,12 +4957,19 @@ OnError:
             /* Get the user pages. */
             down_read(&current->mm->mmap_sem);
 
-            result = get_user_pages(current,
+            result = get_user_pages(
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 5, 0)
+                    current,
                     current->mm,
+#endif
                     memory & PAGE_MASK,
                     pageCount,
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 8, 0)
                     1,
                     0,
+#else
+		    FOLL_WRITE,
+#endif
                     pages,
                     gcvNULL
                     );

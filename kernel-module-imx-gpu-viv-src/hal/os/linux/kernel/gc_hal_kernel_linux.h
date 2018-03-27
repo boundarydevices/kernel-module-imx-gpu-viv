@@ -118,6 +118,12 @@
 #   define CLASS_NAME               "graphics_class"
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
+#define PAGE_CACHE_MASK	PAGE_MASK
+#define PAGE_CACHE_SIZE PAGE_SIZE
+#define PAGE_CACHE_SHIFT PAGE_SHIFT
+#define page_cache_release(page) put_page(page)
+#endif
 #define GetPageCount(size, offset)     ((((size) + ((offset) & ~PAGE_CACHE_MASK)) + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (3,7,0)
