@@ -6879,7 +6879,12 @@ gckOS_QueryProfileTickRate(
 {
     struct timespec res;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+    res.tv_sec = 0;
+    res.tv_nsec = hrtimer_resolution;
+#else
     hrtimer_get_res(CLOCK_MONOTONIC, &res);
+#endif
 
     *TickRate = res.tv_nsec + res.tv_sec * 1000000000ULL;
 
