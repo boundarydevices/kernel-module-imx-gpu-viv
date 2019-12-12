@@ -321,7 +321,7 @@ static struct notifier_block thermal_hot_pm_notifier = {
     .notifier_call = thermal_hot_pm_notify,
     };
 
-static ssize_t show_gpu3DMinClock(struct device_driver *dev, char *buf)
+static ssize_t gpu3DMinClock_show(struct device_driver *dev, char *buf)
 {
     gctUINT currentf,minf,maxf;
     gckGALDEVICE galDevice;
@@ -336,7 +336,7 @@ static ssize_t show_gpu3DMinClock(struct device_driver *dev, char *buf)
     return strlen(buf);
 }
 
-static ssize_t update_gpu3DMinClock(struct device_driver *dev, const char *buf, size_t count)
+static ssize_t gpu3DMinClock_store(struct device_driver *dev, const char *buf, size_t count)
 {
 
     gctINT fields;
@@ -356,7 +356,11 @@ static ssize_t update_gpu3DMinClock(struct device_driver *dev, const char *buf, 
     return count;
 }
 
-static DRIVER_ATTR(gpu3DMinClock, S_IRUGO | S_IWUSR, show_gpu3DMinClock, update_gpu3DMinClock);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
+static DRIVER_ATTR_RW(gpu3DMinClock);
+#else
+static DRIVER_ATTR(gpu3DMinClock, gpu3DMinClock_show, gpu3DMinClock_store);
+#endif
 #endif
 
 

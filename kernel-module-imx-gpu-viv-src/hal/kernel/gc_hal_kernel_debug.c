@@ -55,6 +55,9 @@
 
 #include "gc_hal_kernel_precomp.h"
 #include <gc_hal_kernel_debug.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
+#include <linux/nmi.h>
+#endif
 
 /******************************************************************************\
 ******************************** Debug Variables *******************************

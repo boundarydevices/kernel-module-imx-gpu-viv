@@ -73,6 +73,12 @@
 #include <linux/anon_inodes.h>
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+#include <linux/sched/signal.h>
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+#include <linux/uaccess.h>
+#endif
 #if gcdANDROID_NATIVE_FENCE_SYNC
 #  include <linux/file.h>
 #  include "gc_hal_kernel_sync.h"
@@ -5910,7 +5916,11 @@ gckOS_SetSignalVG(
     if (userTask != gcvNULL)
     {
         info.si_signo = 48;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
         info.si_code  = __SI_CODE(__SI_RT, SI_KERNEL);
+#else
+        info.si_code  = SI_KERNEL;
+#endif
         info.si_pid   = 0;
         info.si_uid   = 0;
         info.si_ptr   = (gctPOINTER) Signal;
@@ -6076,7 +6086,11 @@ gckOS_WaitSignal(
         swait_prepare_locked(&signal->obj.wait, &wait);
 #endif
 #else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
         __add_wait_queue_tail(&signal->obj.wait, &wait);
+#else
+        __add_wait_queue_entry_tail(&signal->obj.wait, &wait);
+#endif
 #endif
         while (gcvTRUE)
         {
@@ -6526,7 +6540,11 @@ gckOS_SetSignal(
     if (userTask != gcvNULL)
     {
         info.si_signo = 48;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
         info.si_code  = __SI_CODE(__SI_RT, SI_KERNEL);
+#else
+        info.si_code  = SI_KERNEL;
+#endif
         info.si_pid   = 0;
         info.si_uid   = 0;
         info.si_ptr   = (gctPOINTER) Signal;
