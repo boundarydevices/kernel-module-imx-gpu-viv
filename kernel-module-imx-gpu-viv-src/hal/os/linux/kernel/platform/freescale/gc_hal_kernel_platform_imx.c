@@ -1560,6 +1560,14 @@ static inline int reset_gpu(int gpu)
     return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#define TOTAL_RAM_PAGES		totalram_pages()
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32)
+#define TOTAL_RAM_PAGES		totalram_pages
+#else
+#define TOTAL_RAM_PAGES		num_physpages
+#endif
+
 static gceSTATUS
 _AdjustParam(
     gcsPLATFORM * Platform,
@@ -1570,7 +1578,7 @@ _AdjustParam(
 
     if ((of_find_compatible_node(NULL, NULL, "fsl,imx8mq-gpu") ||
         of_find_compatible_node(NULL, NULL, "fsl,imx8mm-gpu")) &&
-        ((Args->baseAddress + totalram_pages * PAGE_SIZE) > 0x100000000))
+        ((Args->baseAddress + TOTAL_RAM_PAGES * PAGE_SIZE) > 0x100000000))
     {
         Platform->flagBits |= gcvPLATFORM_FLAG_LIMIT_4G_ADDRESS;
     }

@@ -68,6 +68,11 @@
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+#define dma_alloc_wc	dma_alloc_writecombine
+#define dma_mmap_wc	dma_mmap_writecombine
+#endif
+
 #define _GC_OBJ_ZONE    gcvZONE_OS
 
 typedef struct _gcsDMA_PRIV * gcsDMA_PRIV_PTR;
@@ -164,7 +169,7 @@ _DmaAlloc(
 #if defined CONFIG_MIPS || defined CONFIG_CPU_CSKYV2 || defined CONFIG_PPC || defined CONFIG_ARM64
         = dma_alloc_coherent(galcore_device, NumPages * PAGE_SIZE, &mdlPriv->dmaHandle, gfp);
 #else
-        = dma_alloc_writecombine(galcore_device, NumPages * PAGE_SIZE,  &mdlPriv->dmaHandle, gfp);
+        = dma_alloc_wc(galcore_device, NumPages * PAGE_SIZE,  &mdlPriv->dmaHandle, gfp);
 #endif
 
 #ifdef CONFLICT_BETWEEN_BASE_AND_PHYS
@@ -321,7 +326,7 @@ _DmaMmap(
             pgprot_writecombine(vma->vm_page_prot)) < 0)
 #else
     /* map kernel memory to user space.. */
-    if (dma_mmap_writecombine(gcvNULL,
+    if (dma_mmap_wc(gcvNULL,
             vma,
             (gctINT8_PTR)mdlPriv->kvaddr + (skipPages << PAGE_SHIFT),
             mdlPriv->dmaHandle + (skipPages << PAGE_SHIFT),

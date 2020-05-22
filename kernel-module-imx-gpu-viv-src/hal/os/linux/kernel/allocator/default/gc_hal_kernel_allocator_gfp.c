@@ -192,6 +192,14 @@ _NonContiguousFree(
     gcmkFOOTER_NO();
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#define TOTAL_RAM_PAGES		totalram_pages()
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32)
+#define TOTAL_RAM_PAGES		totalram_pages
+#else
+#define TOTAL_RAM_PAGES		num_physpages
+#endif
+
 static struct page **
 _NonContiguousAlloc(
     IN gctUINT32 NumPages,
@@ -204,11 +212,7 @@ _NonContiguousAlloc(
 
     gcmkHEADER_ARG("NumPages=%u", NumPages);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32)
-    if (NumPages > totalram_pages)
-#else
-    if (NumPages > num_physpages)
-#endif
+    if (NumPages > TOTAL_RAM_PAGES)
     {
         gcmkFOOTER_NO();
         return gcvNULL;

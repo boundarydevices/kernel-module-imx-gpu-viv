@@ -3001,12 +3001,12 @@ gckOS_GetTime(
     OUT gctUINT64_PTR Time
     )
 {
-    struct timeval tv;
+    struct timespec64 tv;
     gcmkHEADER();
 
     /* Return the time of day in microseconds. */
-    do_gettimeofday(&tv);
-    *Time = (tv.tv_sec * 1000000ULL) + tv.tv_usec;
+    ktime_get_real_ts64(&tv);
+    *Time = (tv.tv_sec * 1000000ULL) + tv.tv_nsec/1000;
 
     gcmkFOOTER_NO();
     return gcvSTATUS_OK;
@@ -4201,6 +4201,12 @@ OnError:
     return status;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#define access_ok1(type, address, count) access_ok(address, count)
+#else
+#define access_ok1(type, address, count) access_ok(type, address, count)
+#endif
+
 /*******************************************************************************
 **
 **  gckOS_WriteMemory
@@ -4236,7 +4242,7 @@ gckOS_WriteMemory(
     gcmkVERIFY_ARGUMENT(Address != gcvNULL);
 
     /* Write memory. */
-    if (access_ok(VERIFY_WRITE, Address, 4))
+    if (access_ok1(VERIFY_WRITE, Address, 4))
     {
         /* User address. */
         if (put_user(Data, (gctUINT32*)Address))
@@ -4273,7 +4279,7 @@ gckOS_ReadMappedPointer(
     gcmkVERIFY_ARGUMENT(Address != gcvNULL);
 
     /* Write memory. */
-    if (access_ok(VERIFY_READ, Address, 4))
+    if (access_ok1(VERIFY_READ, Address, 4))
     {
         /* User address. */
         if (get_user(*Data, (gctUINT32*)Address))

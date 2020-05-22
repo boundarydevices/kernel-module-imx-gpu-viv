@@ -368,9 +368,14 @@ _DmabufMapUser(
         gcmkONERROR(gcvSTATUS_OUT_OF_RESOURCES);
     }
     userLogical += buf_desc->sgt->sgl->offset;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#define access_ok1(type, address, count) access_ok(address, count)
+#else
+#define access_ok1(type, address, count) access_ok(type, address, count)
+#endif
 
     /* To make sure the mapping is created. */
-    if (access_ok(VERIFY_READ, userLogical, 4))
+    if (access_ok1(VERIFY_READ, userLogical, 4))
     {
         uint32_t mem;
         get_user(mem, (uint32_t *)userLogical);
