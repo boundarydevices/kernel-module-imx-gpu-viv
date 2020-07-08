@@ -71,6 +71,7 @@
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
 #define dma_alloc_wc	dma_alloc_writecombine
 #define dma_mmap_wc	dma_mmap_writecombine
+#define dma_free_wc	dma_free_writecombine
 #endif
 
 #define _GC_OBJ_ZONE    gcvZONE_OS
@@ -290,7 +291,7 @@ _DmaFree(
 #if defined CONFIG_MIPS || defined CONFIG_CPU_CSKYV2 || defined CONFIG_PPC || defined CONFIG_ARM64
     dma_free_coherent(galcore_device, Mdl->numPages * PAGE_SIZE, mdlPriv->kvaddr, mdlPriv->dmaHandle);
 #else
-    dma_free_writecombine(galcore_device, Mdl->numPages * PAGE_SIZE, mdlPriv->kvaddr, mdlPriv->dmaHandle);
+    dma_free_wc(galcore_device, Mdl->numPages * PAGE_SIZE, mdlPriv->kvaddr, mdlPriv->dmaHandle);
 #endif
 
     gckOS_Free(os, mdlPriv);
