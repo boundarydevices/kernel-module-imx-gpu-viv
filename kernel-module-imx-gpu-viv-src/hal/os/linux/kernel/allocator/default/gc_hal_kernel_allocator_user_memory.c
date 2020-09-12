@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2019 Vivante Corporation
+*    Copyright (c) 2014 - 2020 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2019 Vivante Corporation
+*    Copyright (C) 2014 - 2020 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -208,6 +208,8 @@ static int import_page_map(struct um_desc *um,
         goto error;
     }
 
+    dma_sync_sg_for_cpu(galcore_device, um->sgt.sgl, um->sgt.nents, DMA_FROM_DEVICE);
+
     um->type = UM_PAGE_MAP;
     um->pages = pages;
 
@@ -374,11 +376,7 @@ _Import(
     pageCount = end - start;
 
     /* Allocate extra page to avoid cache overflow */
-#if gcdENABLE_2D
-    extraPage = 2;
-#else
     extraPage = (((memory + gcmALIGN(Size + 64, 64) + PAGE_SIZE - 1) >> PAGE_SHIFT) > end) ? 1 : 0;
-#endif
 
     gcmkTRACE_ZONE(
         gcvLEVEL_INFO, _GC_OBJ_ZONE,
@@ -405,12 +403,6 @@ _Import(
             get_user(data, (u32 *)vaddr);
             put_user(data, (u32 *)vaddr);
             vaddr += PAGE_SIZE;
-
-            /* Fix QM crash with test_buffers */
-            if (vaddr > memory + Size - 4)
-            {
-                vaddr = memory + Size - 4;
-            }
         }
 
         vma = find_vma(current->mm, memory);
@@ -528,12 +520,6 @@ _Import(
 
     UserMemory->pageCount = pageCount;
     UserMemory->extraPage = extraPage;
-
-    if (extraPage && UserMemory->type == UM_PAGE_MAP)
-    {
-        /*Add the padding pages */
-        UserMemory->chunk_count++;
-    }
 
     /* Success. */
     gcmkFOOTER();

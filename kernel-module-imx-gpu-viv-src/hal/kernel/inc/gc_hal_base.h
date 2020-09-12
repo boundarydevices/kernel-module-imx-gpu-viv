@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2019 Vivante Corporation
+*    Copyright (c) 2014 - 2020 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2019 Vivante Corporation
+*    Copyright (C) 2014 - 2020 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -57,9 +57,9 @@
 #define __gc_hal_base_h_
 
 #include "gc_hal_enum.h"
-#include "gc_hal_types.h"
+#include "shared/gc_hal_types.h"
 #include "gc_hal_debug_zones.h"
-#include "shared/gc_hal_base_shared.h"
+#include "shared/gc_hal_base.h"
 
 
 #ifdef __cplusplus
@@ -93,13 +93,7 @@ typedef union  _gcuVIDMEM_NODE *        gcuVIDMEM_NODE_PTR;
 typedef struct _gcsVIDMEM_NODE *        gckVIDMEM_NODE;
 typedef struct _gcsVIDMEM_BLOCK *       gckVIDMEM_BLOCK;
 
-#if gcdENABLE_VG
-typedef struct _gcoVG *                 gcoVG;
-typedef struct _gcsCOMPLETION_SIGNAL *  gcsCOMPLETION_SIGNAL_PTR;
-typedef struct _gcsCONTEXT_MAP *        gcsCONTEXT_MAP_PTR;
-#else
 typedef void *                          gcoVG;
-#endif
 
 typedef struct _gcoFENCE *              gcoFENCE;
 typedef struct _gcsSYNC_CONTEXT *       gcsSYNC_CONTEXT_PTR;
@@ -135,10 +129,14 @@ typedef struct _gcsNN_FIXED_FEATURE
     gctUINT  uscBanks;
     gctUINT  nnLanesPerOutCycle;
     gctUINT  maxOTNumber;
+    gctUINT  physicalVipSramWidthInByte;
     gctUINT  equivalentVipsramWidthInByte;
     gctUINT  shaderCoreCount;
     gctUINT  latencyHidingAtFullAxiBw;
     gctUINT  axiBusWidth;
+    gctUINT  nnMaxKXSize;
+    gctUINT  nnMaxKYSize;
+    gctUINT  nnMaxKZSize;
 } gcsNN_FIXED_FEATURE;
 
 /* Features can be customized from outside */
@@ -163,6 +161,7 @@ typedef struct _gcsNN_CUSTOMIZED_FEATURE
     gctUINT  nnWriteWithoutUSC;
     gctUINT  depthWiseSupport;
     gctUINT  vipVectorPrune;
+    gctUINT  ddrKernelBurstSize;
 } gcsNN_CUSTOMIZED_FEATURE;
 
 /* Features are unified (hardcoded) for hardwares */
@@ -270,6 +269,7 @@ gcsSystemInfo;
     gcvNULL, /* VX context lock    */ \
     gcvPATCH_NOTINIT,/* global patchID     */ \
     gcvNULL, /* global fenceID*/ \
+    gcvNULL, /* mainThreadHandle */ \
     gcvFALSE, /* memory profile flag */ \
     gcvNULL, /* profileLock;        */ \
     0, /* allocCount;         */ \
@@ -318,19 +318,8 @@ typedef struct _gcsTLS
 
     /* Only for separated 3D and 2D */
     gcoHARDWARE                 hardware2D;
-#if gcdENABLE_VG
-    gcoVGHARDWARE               vg;
-    gcoVG                       engineVG;
-#endif /* gcdENABLE_VG */
 #if gcdENABLE_3D
     gco3D                       engine3D;
-#endif
-#if gcdENABLE_2D
-    gco2D                       engine2D;
-#if gcdDUMP_2D
-    gctUINT32                   newDump2DFlag;
-#endif
-
 #endif
     gcoVX                       engineVX;
 
@@ -445,14 +434,6 @@ gcoHAL_GetHardware(
     OUT gcoHARDWARE* Hw
     );
 
-#if gcdENABLE_2D
-/* Get pointer to gco2D object. */
-gceSTATUS
-gcoHAL_Get2DEngine(
-    IN gcoHAL Hal,
-    OUT gco2D * Engine
-    );
-#endif
 
 #if gcdENABLE_3D
 gceSTATUS
@@ -480,6 +461,8 @@ gcoHAL_GetProductName(
 
 gceSTATUS
 gcoHAL_SetFscaleValue(
+    IN gcoHAL Hal,
+    IN gctUINT CoreIndex,
     IN gctUINT FscaleValue,
     IN gctUINT ShaderFscaleValue
     );
@@ -957,11 +940,19 @@ gcoHAL_UnlockVideoMemory(
     );
 
 gceSTATUS
+gcoHAL_UnlockVideoMemoryEX(
+    IN gctUINT32 Node,
+    IN gceVIDMEM_TYPE Type,
+    IN gceENGINE Engine,
+    IN gctBOOL Sync
+    );
+
+gceSTATUS
 gcoHAL_ReleaseVideoMemory(
     IN gctUINT32 Node
     );
 
-#if gcdENABLE_3D || gcdENABLE_VG
+#if gcdENABLE_3D
 /* Query the target capabilities. */
 gceSTATUS
 gcoHAL_QueryTargetCaps(
@@ -992,21 +983,6 @@ gcoHAL_WaitFence(
     IN gctUINT32 TimeOut
     );
 
-#if gcdENABLE_2D
-gceSTATUS
-gcoHAL_AttachExternalMemory(
-    IN gcoHAL Hal,
-    IN gcsEXTERNAL_MEMORY_INFO * External,
-    OUT gctPOINTER * Handle,
-    OUT gctUINT32_PTR GPU2DAddress
-    );
-
-gceSTATUS
-gcoHAL_DetachExternalMemory(
-    IN gcoHAL Hal,
-    IN gctPOINTER * Handle
-    );
-#endif
 
 gceSTATUS
 gcoHAL_ScheduleSignal(
@@ -2746,7 +2722,7 @@ gcoSURF_PopSharedInfo(
     IN gcoSURF Surface
     );
 
-#if (gcdENABLE_3D || gcdENABLE_VG)
+#if (gcdENABLE_3D)
 /* Copy surface. */
 gceSTATUS
 gcoSURF_Copy(
@@ -3717,9 +3693,8 @@ gcoOS_Print(
 #   define gcmkPRINT_VERSION()      _gcmPRINT_VERSION(gcmk)
 #   define _gcmPRINT_VERSION(prefix) \
         prefix##TRACE(gcvLEVEL_ERROR, \
-                      "Vivante HAL version %d.%d.%d build %d", \
-                      gcvVERSION_MAJOR, gcvVERSION_MINOR, \
-                      gcvVERSION_PATCH, gcvVERSION_BUILD)
+                      "Vivante HAL version %s", \
+                      gcvVERSION_STRING)
 #else
 #   define gcmPRINT_VERSION()       do { gcmSTACK_DUMP(); } while (gcvFALSE)
 #   define gcmkPRINT_VERSION()      do { } while (gcvFALSE)
@@ -5077,6 +5052,7 @@ gcoHAL_GetUserDebugOption(
 }
 
 /*----------------------------------------------------------------------------*/
+
 #define gcmSETSINGLESTATE_DUMMY(StateDelta, CommandBuffer, Memory, FixedPoint, \
                                 Address, Data) \
  { \

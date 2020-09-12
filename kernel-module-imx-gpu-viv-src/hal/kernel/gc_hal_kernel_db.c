@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2019 Vivante Corporation
+*    Copyright (c) 2014 - 2020 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2019 Vivante Corporation
+*    Copyright (C) 2014 - 2020 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -721,7 +721,6 @@ gckKERNEL_AddProcessDB(
     gcsDATABASE_COUNTERS * count;
     gctUINT32 vidMemType;
     gcePOOL vidMemPool;
-    gceDATABASE_TYPE vidMemDbType;
 
     gcmkHEADER_ARG("Kernel=%p ProcessID=%d Type=%d Pointer=%p "
                    "Physical=%p Size=%lu",
@@ -733,7 +732,6 @@ gckKERNEL_AddProcessDB(
     /* Decode type. */
     vidMemType = (Type & gcdDB_VIDEO_MEMORY_TYPE_MASK) >> gcdDB_VIDEO_MEMORY_TYPE_SHIFT;
     vidMemPool = (Type & gcdDB_VIDEO_MEMORY_POOL_MASK) >> gcdDB_VIDEO_MEMORY_POOL_SHIFT;
-    vidMemDbType = (Type & gcdDB_VIDEO_MEMORY_DBTYPE_MASK) >> gcdDB_VIDEO_MEMORY_DBTYPE_SHIFT;
 
     Type &= gcdDATABASE_TYPE_MASK;
 
@@ -881,21 +879,6 @@ gckKERNEL_AddProcessDB(
         {
             count->maxBytes = count->bytes;
         }
-
-        if (vidMemDbType == gcvDB_CONTIGUOUS)
-        {
-            count = &database->contiguous;
-
-            /* Adjust counters. */
-            count->totalBytes += Size;
-            count->bytes      += Size;
-            count->allocCount++;
-
-            if (count->bytes > count->maxBytes)
-            {
-                count->maxBytes = count->bytes;
-            }
-        }
     }
 
     gcmkVERIFY_OK(gckOS_ReleaseMutex(Kernel->os, database->counterMutex));
@@ -946,7 +929,6 @@ gckKERNEL_RemoveProcessDB(
     gctSIZE_T bytes = 0;
     gctUINT32 vidMemType;
     gcePOOL vidMemPool;
-    gceDATABASE_TYPE vidMemDbType;
 
     gcmkHEADER_ARG("Kernel=%p ProcessID=%d Type=%d Pointer=%p",
                    Kernel, ProcessID, Type, Pointer);
@@ -958,7 +940,6 @@ gckKERNEL_RemoveProcessDB(
     /* Decode type. */
     vidMemType = (Type & gcdDB_VIDEO_MEMORY_TYPE_MASK) >> gcdDB_VIDEO_MEMORY_TYPE_SHIFT;
     vidMemPool = (Type & gcdDB_VIDEO_MEMORY_POOL_MASK) >> gcdDB_VIDEO_MEMORY_POOL_SHIFT;
-    vidMemDbType = (Type & gcdDB_VIDEO_MEMORY_DBTYPE_MASK) >> gcdDB_VIDEO_MEMORY_DBTYPE_SHIFT;
 
     Type &= gcdDATABASE_TYPE_MASK;
 
@@ -981,13 +962,6 @@ gckKERNEL_RemoveProcessDB(
         database->vidMemType[vidMemType].freeCount++;
         database->vidMemPool[vidMemPool].bytes -= bytes;
         database->vidMemPool[vidMemPool].freeCount++;
-
-        if (vidMemDbType == gcvDB_CONTIGUOUS)
-        {
-            database->contiguous.bytes -= bytes;
-            database->contiguous.freeCount++;
-        }
-
         break;
 
     case gcvDB_NON_PAGED:
@@ -1164,6 +1138,10 @@ gckKERNEL_DestroyProcessDB(
         gcmkONERROR(gcvSTATUS_NOT_FOUND);
     }
 
+#if gcdCAPTURE_ONLY_MODE
+    gcmkPRINT("Capture only mode: The max allocation from System Pool is %llu bytes", database->vidMemPool[gcvPOOL_SYSTEM].maxBytes);
+#endif
+
     /* Cannot remove the database from the hash list
     ** since later records deinit need to access from the hash
     */
@@ -1278,28 +1256,6 @@ gckKERNEL_DestroyProcessDB(
                                                ProcessID,
                                                &asynchronous);
 
-#if gcdENABLE_VG
-                if (record->kernel->core == gcvCORE_VG)
-                {
-                    if (gcmIS_SUCCESS(status) && (gcvTRUE == asynchronous))
-                    {
-                        status = gckVIDMEM_NODE_Unlock(record->kernel,
-                                                       nodeObject,
-                                                       ProcessID,
-                                                       gcvNULL);
-                    }
-
-                    /* Deref handle. */
-                    gcmkVERIFY_OK(gckVIDMEM_HANDLE_Dereference(record->kernel,
-                                                               ProcessID,
-                                                               handle));
-
-                    /* Deref node. */
-                    gcmkVERIFY_OK(gckVIDMEM_NODE_Dereference(record->kernel,
-                                                             nodeObject));
-                }
-                else
-#endif
                 {
                     /* Deref handle. */
                     gcmkVERIFY_OK(gckVIDMEM_HANDLE_Dereference(record->kernel,
@@ -1373,6 +1329,8 @@ gckKERNEL_DestroyProcessDB(
                                                gcvNULL));
         }
     }
+
+    gcmkONERROR(gckKERNEL_DestroyProcessReservedUserMap(Kernel, ProcessID));
 
     /* Acquire the database mutex. */
     gcmkONERROR(gckOS_AcquireMutex(Kernel->os, Kernel->db->dbMutex, gcvINFINITE));

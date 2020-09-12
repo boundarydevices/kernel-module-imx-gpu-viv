@@ -2,7 +2,7 @@
 #
 #    The MIT License (MIT)
 #
-#    Copyright (c) 2014 - 2017 Vivante Corporation
+#    Copyright (c) 2014 - 2020 Vivante Corporation
 #
 #    Permission is hereby granted, free of charge, to any person obtaining a
 #    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 #
 #    The GPL License (GPL)
 #
-#    Copyright (C) 2014 - 2017 Vivante Corporation
+#    Copyright (C) 2014 - 2020 Vivante Corporation
 #
 #    This program is free software; you can redistribute it and/or
 #    modify it under the terms of the GNU General Public License
@@ -75,9 +75,6 @@ INCLUDE += -I$(AQROOT)/hal/kernel/inc
 INCLUDE += -I$(AQROOT)/hal/kernel/inc
 INCLUDE += -I$(AQROOT)/hal/kernel
 INCLUDE += -I$(AQROOT)/hal/kernel/arch
-ifeq ($(VIVANTE_ENABLE_VG),1)
-INCLUDE += -I$(AQROOT)/hal/kernel/archvg
-endif
 
 CFLAGS += $(INCLUDE) -Werror -ansi
 
@@ -86,6 +83,10 @@ CFLAGS += $(INCLUDE) -Werror -ansi
 # Describe object files.
 
 OBJECTS = $(OBJ_DIR)/gc_hal_kernel_context.o \
-          $(OBJ_DIR)/gc_hal_kernel_hardware.o
+          $(OBJ_DIR)/gc_hal_kernel_hardware.o \
+          $(OBJ_DIR)/gc_hal_kernel_hardware_func.o \
+          $(OBJ_DIR)/gc_hal_kernel_hardware_async_fe.o \
+          $(OBJ_DIR)/gc_hal_kernel_hardware_mc_fe.o \
+          $(OBJ_DIR)/gc_hal_kernel_hardware_waitlink_fe.o
 
 include $(AQROOT)/common.target

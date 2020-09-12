@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2019 Vivante Corporation
+*    Copyright (c) 2014 - 2020 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2019 Vivante Corporation
+*    Copyright (C) 2014 - 2020 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -57,7 +57,7 @@
 #define __gc_hal_enum_h_
 
 #include "gc_hal_options.h"
-#include "shared/gc_hal_enum_shared.h"
+#include "shared/gc_hal_enum.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -108,6 +108,7 @@ typedef enum _gceOPTION
     gcvOPTION_OVX_ENABLE_NN_STRIDE,
     gcvOPTION_OVX_USE_MULTI_DEVICES,
     gcvOPTION_OVX_ENABLE_NN_DDR_BURST_SIZE_256B,
+    gcvOPTION_OVX_ENABLE_NN_DDR_BURST_SIZE_64B,
 #endif
     /* Insert option above this comment only */
     gcvOPTION_COUNT                     /* Not a OPTION*/
@@ -846,6 +847,15 @@ typedef enum _gceTEXTURE_DS_MODE
     gcvTEXTURE_DS_MODE_STENCIL = 2,
 }gceTEXTURE_DS_MODE;
 
+typedef enum _gceTEXTURE_DS_TEX_MODE
+{
+    gcvTEXTURE_DS_TEXTURE_MODE_LUMINANCE    = 0,
+    gcvTEXTURE_DS_TEXTURE_MODE_INTENSITY,
+    gcvTEXTURE_DS_TEXTURE_MODE_ALPHA,
+    gcvTEXTURE_DS_TEXTURE_MODE_RED,
+
+    gcvTEXTURE_DS_TEXTURE_MODE_INVALID,
+}gceTEXTURE_DS_TEX_MODE;
 
 /* Pixel output swizzle modes. */
 typedef enum _gcePIXEL_SWIZZLE
@@ -935,6 +945,30 @@ typedef enum _gceHAL_ARG_VERSION
 }
 gceHAL_ARG_VERSION;
 
+
+/** endian mode  for each 2Bytes
+* endian mode                          endian
+*endian mode0: 0  1  2  3  4  5  6  7  8  9  10  11  12  13  14  15
+*endian mode1: 1  0  3  2  5  4  7  6  9  8  11  10  13  12  15  14
+*endian mode2: 2  3  0  1  6  7  4  5  10  11  8  9  14  15  12  13
+*endain mode3: 3  2  1  0  7  6  5  4  11  10  9  8  15  14  13  12
+*endain mode4: 12  13  14  15  8  9  10  11  4  5  6  7  0  1  2  3
+*endain mode5: 13  12  15  14  9  8  11  10  5  4  7  6  1  0  3  2
+*endain mode6: 14  15  12  13  10  11  8  9  6  7  4  5  2  3  0  1
+*endain mode7: 15  14  13  12  11  10  9  8  7  6  5  4  3  2  1  0
+**/
+typedef enum _gceENDIAN_MODE
+{
+    gcvENDIAN_MODE0          = 0x0, /* endian mode0 */
+    gcvENDIAN_MODE1          = 0x1, /* endian mode1 */
+    gcvENDIAN_MODE2          = 0x2, /* endian mode2 */
+    gcvENDIAN_MODE3          = 0x3, /* endian mode3 */
+    gcvENDIAN_MODE4          = 0x4, /* endian mode4 */
+    gcvENDIAN_MODE5          = 0x5, /* endian mode5 */
+    gcvENDIAN_MODE6          = 0x6, /* endian mode6 */
+    gcvENDIAN_MODE7          = 0x7, /* endian mode7 */
+}
+gceENDIAN_MODE;
 
 typedef enum _gceHW_FE_TYPE
 {
@@ -2117,10 +2151,6 @@ enum
 /* Alloc with memory limit. */
 #define gcvALLOC_FLAG_MEMLIMIT              0x02000000
 
-/* CMA allocator only */
-#define gcvALLOC_FLAG_CMA_LIMIT             0x04000000
-
-#define gcvALLOC_FLAG_CMA_PREEMPT           0x08000000
 
 /* GL_VIV internal usage */
 #ifndef GL_MAP_BUFFER_OBJ_VIV
@@ -2144,22 +2174,8 @@ typedef struct _gcsSTATE_DELTA      * gcsSTATE_DELTA_PTR;
 typedef struct _gcsQUEUE            * gcsQUEUE_PTR;
 typedef struct _gcoQUEUE            * gcoQUEUE;
 typedef struct _gcsHAL_INTERFACE    * gcsHAL_INTERFACE_PTR;
-#if VIVANTE_PROFILER
-typedef struct _gcsHAL_PROFILER_INTERFACE    * gcsHAL_PROFILER_INTERFACE_PTR;
-#endif
 typedef struct _gcs2D_PROFILE       * gcs2D_PROFILE_PTR;
 
-#if gcdENABLE_VG
-typedef struct _gcoVGHARDWARE *            gcoVGHARDWARE;
-typedef struct _gcoVGBUFFER *           gcoVGBUFFER;
-typedef struct _gckVGHARDWARE *         gckVGHARDWARE;
-typedef struct _gcsVGCONTEXT *            gcsVGCONTEXT_PTR;
-typedef struct _gcsVGCONTEXT_MAP *        gcsVGCONTEXT_MAP_PTR;
-typedef struct _gcsVGCMDQUEUE *            gcsVGCMDQUEUE_PTR;
-typedef struct _gcsTASK_MASTER_TABLE *    gcsTASK_MASTER_TABLE_PTR;
-typedef struct _gckVGKERNEL *            gckVGKERNEL;
-typedef void *                            gctTHREAD;
-#endif
 
 #ifdef __cplusplus
 }

@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2019 Vivante Corporation
+*    Copyright (c) 2014 - 2020 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2019 Vivante Corporation
+*    Copyright (C) 2014 - 2020 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -1373,16 +1373,6 @@ gckOS_AllocateNonPagedMemory(
 
     gcmkASSERT(Flag & gcvALLOC_FLAG_CONTIGUOUS);
 
-#if gcdENABLE_CACHEABLE_COMMAND_BUFFER
-    Flag &= ~gcvALLOC_FLAG_CACHEABLE;
-#endif
-
-#if LINUX_CMA_FSL
-    Flag |= gcvALLOC_FLAG_CMA_PREEMPT;
-#else
-    Flag |= gcvALLOC_FLAG_4GB_ADDR | gcvALLOC_FLAG_CONTIGUOUS;
-#endif
-
     /* Walk all allocators. */
     list_for_each_entry(allocator, &Os->allocatorList, link)
     {
@@ -2276,7 +2266,6 @@ gckOS_MapPhysical(
 #else
             logical = (gctPOINTER) ioremap_nocache(physical, Bytes);
 #endif
-
             if (logical == gcvNULL)
             {
                 gcmkTRACE_ZONE(
@@ -3106,7 +3095,7 @@ gckOS_AllocatePagedMemory(
         gcmkONERROR(gcvSTATUS_OUT_OF_MEMORY);
     }
 
-#if defined(CONFIG_ZONE_DMA32)
+#if defined(CONFIG_ZONE_DMA32) || defined(CONFIG_ZONE_DMA)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
     zoneDMA32 = gcvTRUE;
 #endif
@@ -3116,29 +3105,6 @@ gckOS_AllocatePagedMemory(
     {
         Flag &= ~gcvALLOC_FLAG_4GB_ADDR;
     }
-
-#if defined(CONFIG_ZONE_DMA32) && LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37) \
-    || !defined(LINUX_CMA_FSL) || !LINUX_CMA_FSL
-    /* redirect DMA32 pool for CMA LIMIT request */
-    if (Flag & gcvALLOC_FLAG_CMA_LIMIT)
-    {
-        Flag &= ~gcvALLOC_FLAG_CMA_LIMIT;
-        Flag |= gcvALLOC_FLAG_4GB_ADDR | gcvALLOC_FLAG_CONTIGUOUS;
-    }
-#else
-    if (Flag & gcvALLOC_FLAG_CMA_LIMIT)
-    {
-        if (Os->allocatorLimitMarker)
-        {
-            Flag &= ~gcvALLOC_FLAG_CACHEABLE;
-        }
-        else
-        {
-            Flag &= ~gcvALLOC_FLAG_CMA_LIMIT;
-            Flag |= gcvALLOC_FLAG_CONTIGUOUS;
-        }
-    }
-#endif
 
     /* Walk all allocators. */
     list_for_each_entry(allocator, &Os->allocatorList, link)
@@ -3440,19 +3406,6 @@ gckOS_MapPagesEx(
             /* remove LSB. */
             phys &= ~(4096ull - 1);
 
-#if gcdENABLE_VG
-            if (Core == gcvCORE_VG)
-            {
-                for (i = 0; i < (PAGE_SIZE / 4096); i++)
-                {
-                    gcmkONERROR(
-                        gckVGMMU_SetPage(Os->device->kernels[Core]->vg->mmu,
-                            phys + (i * 4096),
-                            table++));
-                }
-            }
-            else
-#endif
             {
                 for (i = 0; i < (PAGE_SIZE / 4096); i++)
                 {
@@ -3469,25 +3422,6 @@ gckOS_MapPagesEx(
         offset += PAGE_SIZE;
     }
 
-#if gcdENABLE_VG
-    if (Core == gcvCORE_VG)
-    {
-        gckVGMMU mmu = Os->device->kernels[gcvCORE_VG]->vg->mmu;
-        gctPHYS_ADDR mmuMdl = mmu->pageTablePhysical;
-
-        offset = (gctUINT8_PTR)PageTable - (gctUINT8_PTR)mmu->pageTableLogical;
-
-        gcmkVERIFY_OK(gckOS_CacheClean(
-            Os,
-            _GetProcessID(),
-            mmuMdl,
-            offset,
-            PageTable,
-            bytes
-            ));
-    }
-    else
-#  endif
     {
         gckMMU mmu = Os->device->kernels[Core]->mmu;
         gcsADDRESS_AREA * area = &mmu->dynamicArea4K;
@@ -4136,7 +4070,10 @@ gckOS_SuspendInterruptEx(
     /* Verify the arguments. */
     gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
 
-    disable_irq(Os->device->irqLines[Core]);
+    if (Os->device->irqLines[Core] != -1)
+    {
+        disable_irq(Os->device->irqLines[Core]);
+    }
 
     gcmkFOOTER_NO();
     return gcvSTATUS_OK;
@@ -4161,7 +4098,10 @@ gckOS_ResumeInterruptEx(
     /* Verify the arguments. */
     gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
 
-    enable_irq(Os->device->irqLines[Core]);
+    if (Os->device->irqLines[Core] != -1)
+    {
+        enable_irq(Os->device->irqLines[Core]);
+    }
 
     gcmkFOOTER_NO();
     return gcvSTATUS_OK;
@@ -4219,7 +4159,7 @@ _CacheOperation(
     )
 {
     PLINUX_MDL mdl = (PLINUX_MDL)Handle;
-    PLINUX_MDL_MAP mdlMap = gcvNULL;
+    PLINUX_MDL_MAP mdlMap;
     gckALLOCATOR allocator;
 
     if (!mdl || !mdl->allocator)
@@ -4232,14 +4172,11 @@ _CacheOperation(
 
     if (allocator->ops->Cache)
     {
-        if (ProcessID)
-        {
-            mutex_lock(&mdl->mapsMutex);
+        mutex_lock(&mdl->mapsMutex);
 
-            mdlMap = FindMdlMap(mdl, ProcessID);
+        mdlMap = FindMdlMap(mdl, ProcessID);
 
-            mutex_unlock(&mdl->mapsMutex);
-        }
+        mutex_unlock(&mdl->mapsMutex);
 
         if (ProcessID && mdlMap == gcvNULL)
         {
@@ -4255,6 +4192,8 @@ _CacheOperation(
             return gcvSTATUS_OK;
         }
     }
+
+    _MemoryBarrier();
 
     return gcvSTATUS_OK;
 }
@@ -5203,7 +5142,6 @@ gckOS_GetProfileTick(
 
     ktime_get_ts(&time);
 #endif
-
     *Tick = time.tv_nsec + time.tv_sec * 1000000000ULL;
 
     return gcvSTATUS_OK;
@@ -5958,191 +5896,6 @@ gckOS_SignalUserSignal(
     return gckOS_Signal(Os, (gctSIGNAL)(gctUINTPTR_T)SignalID, State);
 }
 
-#if gcdENABLE_VG
-gceSTATUS
-gckOS_CreateSemaphoreVG(
-    IN gckOS Os,
-    OUT gctSEMAPHORE * Semaphore
-    )
-{
-    gceSTATUS status;
-    struct semaphore * newSemaphore;
-
-    gcmkHEADER_ARG("Os=%p Semaphore=%p", Os, Semaphore);
-    /* Verify the arguments. */
-    gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
-    gcmkVERIFY_ARGUMENT(Semaphore != gcvNULL);
-
-    do
-    {
-        /* Allocate the semaphore structure. */
-        newSemaphore = (struct semaphore *)kmalloc(gcmSIZEOF(struct semaphore), GFP_KERNEL | gcdNOWARN);
-        if (newSemaphore == gcvNULL)
-        {
-            gcmkERR_BREAK(gcvSTATUS_OUT_OF_MEMORY);
-        }
-
-        /* Initialize the semaphore. */
-        sema_init(newSemaphore, 0);
-
-        /* Set the handle. */
-        * Semaphore = (gctSEMAPHORE) newSemaphore;
-
-        /* Success. */
-        status = gcvSTATUS_OK;
-    }
-    while (gcvFALSE);
-
-    gcmkFOOTER();
-    /* Return the status. */
-    return status;
-}
-
-
-gceSTATUS
-gckOS_IncrementSemaphore(
-    IN gckOS Os,
-    IN gctSEMAPHORE Semaphore
-    )
-{
-    gcmkHEADER_ARG("Os=%p Semaphore=%p", Os, Semaphore);
-    /* Verify the arguments. */
-    gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
-    gcmkVERIFY_ARGUMENT(Semaphore != gcvNULL);
-
-    /* Increment the semaphore's count. */
-    up((struct semaphore *) Semaphore);
-
-    gcmkFOOTER_NO();
-    /* Success. */
-    return gcvSTATUS_OK;
-}
-
-gceSTATUS
-gckOS_DecrementSemaphore(
-    IN gckOS Os,
-    IN gctSEMAPHORE Semaphore
-    )
-{
-    gceSTATUS status;
-    gctINT result;
-
-    gcmkHEADER_ARG("Os=%p Semaphore=%p", Os, Semaphore);
-    /* Verify the arguments. */
-    gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
-    gcmkVERIFY_ARGUMENT(Semaphore != gcvNULL);
-
-    do
-    {
-        /* Decrement the semaphore's count. If the count is zero, wait
-           until it gets incremented. */
-        result = down_interruptible((struct semaphore *) Semaphore);
-
-        /* Signal received? */
-        if (result != 0)
-        {
-            status = gcvSTATUS_TERMINATE;
-            break;
-        }
-
-        /* Success. */
-        status = gcvSTATUS_OK;
-    }
-    while (gcvFALSE);
-
-    gcmkFOOTER();
-    /* Return the status. */
-    return status;
-}
-
-/******************************************************************************\
-******************************** Thread Object *********************************
-\******************************************************************************/
-
-gceSTATUS
-gckOS_StartThread(
-    IN gckOS Os,
-    IN gctTHREADFUNC ThreadFunction,
-    IN gctPOINTER ThreadParameter,
-    OUT gctTHREAD * Thread
-    )
-{
-    gceSTATUS status;
-    struct task_struct * thread;
-
-    gcmkHEADER_ARG("Os=%p", Os);
-    /* Verify the arguments. */
-    gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
-    gcmkVERIFY_ARGUMENT(ThreadFunction != gcvNULL);
-    gcmkVERIFY_ARGUMENT(Thread != gcvNULL);
-
-    do
-    {
-        /* Create the thread. */
-        thread = kthread_create(
-            ThreadFunction,
-            ThreadParameter,
-            "Vivante Kernel Thread"
-            );
-
-        /* Failed? */
-        if (IS_ERR(thread))
-        {
-            status = gcvSTATUS_GENERIC_IO;
-            break;
-        }
-
-        /* Start the thread. */
-        wake_up_process(thread);
-
-        /* Set the thread handle. */
-        * Thread = (gctTHREAD) thread;
-
-        /* Success. */
-        status = gcvSTATUS_OK;
-    }
-    while (gcvFALSE);
-
-    gcmkFOOTER();
-    /* Return the status. */
-    return status;
-}
-
-gceSTATUS
-gckOS_StopThread(
-    IN gckOS Os,
-    IN gctTHREAD Thread
-    )
-{
-    gcmkHEADER_ARG("Os=%p Thread=%p", Os, Thread);
-    /* Verify the arguments. */
-    gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
-    gcmkVERIFY_ARGUMENT(Thread != gcvNULL);
-
-    /* Thread should have already been enabled to terminate. */
-    kthread_stop((struct task_struct *) Thread);
-
-    gcmkFOOTER_NO();
-    /* Success. */
-    return gcvSTATUS_OK;
-}
-
-gceSTATUS
-gckOS_VerifyThread(
-    IN gckOS Os,
-    IN gctTHREAD Thread
-    )
-{
-    gcmkHEADER_ARG("Os=%p Thread=%p", Os, Thread);
-    /* Verify the arguments. */
-    gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
-    gcmkVERIFY_ARGUMENT(Thread != gcvNULL);
-
-    gcmkFOOTER_NO();
-    /* Success. */
-    return gcvSTATUS_OK;
-}
-#endif
 
 /******************************************************************************\
 ******************************** Software Timer ********************************
@@ -7059,7 +6812,7 @@ gceSTATUS
 gckOS_CPUPhysicalToGPUPhysical(
     IN gckOS Os,
     IN gctPHYS_ADDR_T CPUPhysical,
-    IN gctPHYS_ADDR_T * GPUPhysical
+    OUT gctPHYS_ADDR_T * GPUPhysical
     )
 {
     gcsPLATFORM * platform;
@@ -7251,6 +7004,10 @@ gckOS_QueryOption(
     else if (!strcmp(Option, "allMapInOne"))
     {
         *Value = device->args.allMapInOne;
+    }
+    else if (!strcmp(Option, "isrPoll"))
+    {
+        *Value = device->args.isrPoll;
     }
     else
     {

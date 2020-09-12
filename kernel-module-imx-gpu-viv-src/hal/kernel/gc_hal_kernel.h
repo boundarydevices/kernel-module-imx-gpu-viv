@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2019 Vivante Corporation
+*    Copyright (c) 2014 - 2020 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2019 Vivante Corporation
+*    Copyright (C) 2014 - 2020 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -59,13 +59,10 @@
 #include "gc_hal.h"
 #include "gc_hal_kernel_hardware.h"
 #include "gc_hal_kernel_hardware_fe.h"
-#include "gc_hal_driver.h"
+#include "shared/gc_hal_driver.h"
 #include "gc_hal_kernel_mutex.h"
 #include "gc_hal_metadata.h"
 
-#if gcdENABLE_VG
-#include "gc_hal_kernel_vg.h"
-#endif
 
 #if gcdSECURITY || gcdENABLE_TRUST_APPLICATION
 #include "gc_hal_security_interface.h"
@@ -252,9 +249,6 @@ gceDATABASE_TYPE;
 
 #define gcdDB_VIDEO_MEMORY_POOL_MASK    0x00FF0000
 #define gcdDB_VIDEO_MEMORY_POOL_SHIFT   16
-
-#define gcdDB_VIDEO_MEMORY_DBTYPE_MASK  0xFF000000
-#define gcdDB_VIDEO_MEMORY_DBTYPE_SHIFT 24
 
 typedef struct _gcsDATABASE_RECORD *    gcsDATABASE_RECORD_PTR;
 typedef struct _gcsDATABASE_RECORD
@@ -584,9 +578,6 @@ struct _gckKERNEL
     gcsTIMER                    timers[8];
     gctUINT32                   timeOut;
 
-#if gcdENABLE_VG
-    gckVGKERNEL                 vg;
-#endif
 
 #if gcdDVFS
     gckDVFS                     dvfs;
@@ -640,6 +631,7 @@ struct _gckKERNEL
     gctUINT64                   sRAMLoopMode;
 
     gctUINT32                   timeoutPID;
+    gctBOOL                     threadInitialized;
 };
 
 struct _FrequencyHistory
@@ -1121,9 +1113,6 @@ typedef union _gcuVIDMEM_NODE
         /* mdl record pointer. */
         gctPHYS_ADDR            physical;
 
-#if gcdENABLE_VG
-        gctPOINTER              kernelVirtual;
-#endif
     }
     VidMem;
 
@@ -1146,13 +1135,6 @@ typedef union _gcuVIDMEM_NODE
         /* Kernel virtual address. */
         gctPOINTER              kvaddr;
 
-#if gcdENABLE_VG
-        /* Physical address of this node, only meaningful when it is contiguous. */
-        gctUINT64               physicalAddress;
-
-        /* Kernel logical of this node. */
-        gctPOINTER              kernelVirtual;
-#endif
 
         /* Customer private handle */
         gctUINT32               gid;
@@ -1334,6 +1316,11 @@ typedef struct _gcsVIDMEM_NODE
     gctUINT32                   tilingMode;
     gctUINT32                   tsMode;
     gctUINT64                   clearValue;
+
+#if gcdCAPTURE_ONLY_MODE
+    gctSIZE_T                   captureSize;
+    gctPOINTER                  captureLogical;
+#endif
 }
 gcsVIDMEM_NODE;
 
@@ -1408,14 +1395,18 @@ typedef struct _gcsDEVICE
     gctUINT32                   sRAMBaseAddresses[gcvCORE_COUNT][gcvSRAM_INTER_COUNT];
     gctBOOL                     sRAMPhysFaked[gcvCORE_COUNT][gcvSRAM_INTER_COUNT];
 
-    /* Physical address of external SRAMs. */
+    /* CPU physical address of external SRAMs. */
     gctUINT64                   extSRAMBases[gcvSRAM_EXT_COUNT];
+    /* GPU physical address of external SRAMs. */
+    gctUINT64                   extSRAMGPUBases[gcvSRAM_EXT_COUNT];
     /* External SRAMs' size. */
     gctUINT32                   extSRAMSizes[gcvSRAM_EXT_COUNT];
     /* GPU/VIP virtual address of external SRAMs. */
     gctUINT32                   extSRAMBaseAddresses[gcvSRAM_EXT_COUNT];
     /* MDL. */
     gctPHYS_ADDR                extSRAMPhysical[gcvSRAM_EXT_COUNT];
+    /* IntegerId. */
+    gctUINT32                   extSRAMGPUPhysNames[gcvSRAM_EXT_COUNT];
 
     /* Show SRAM mapping info or not. */
     gctUINT                     showSRAMMapInfo;
@@ -2361,14 +2352,6 @@ gckDEVICE_Dispatch(
     IN gckDEVICE Device,
     IN gcsHAL_INTERFACE_PTR Interface
     );
-
-#if VIVANTE_PROFILER
-gceSTATUS
-gckDEVICE_Profiler_Dispatch(
-    IN gckDEVICE Device,
-    IN gcsHAL_PROFILER_INTERFACE_PTR Interface
-    );
-#endif
 
 gceSTATUS
 gckDEVICE_GetMMU(

@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2019 Vivante Corporation
+*    Copyright (c) 2014 - 2020 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2019 Vivante Corporation
+*    Copyright (C) 2014 - 2020 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -2347,7 +2347,7 @@ _SemaphoreStall(
 }
 #endif
 
-#if (gcdENABLE_3D || gcdENABLE_2D)
+#if (gcdENABLE_3D)
 static gctUINT32
 _SwitchPipe(
     IN gckCONTEXT Context,
@@ -2845,7 +2845,7 @@ _UpdateUnifiedReg(
 }
 #endif
 
-#if (gcdENABLE_3D || gcdENABLE_2D)
+#if (gcdENABLE_3D)
 static gceSTATUS
 _InitializeContextBuffer(
     IN gckCONTEXT Context
@@ -3134,8 +3134,13 @@ _InitializeContextBuffer(
     index += _State(Context, index, 0x00644 >> 2, 0x00000000, 1, gcvFALSE, gcvTRUE);
     index += _State(Context, index, 0x00648 >> 2, 0x00000000, 1, gcvFALSE, gcvFALSE);
     index += _State(Context, index, 0x00674 >> 2, 0x00000000, 1, gcvFALSE, gcvFALSE);
-    index += _State(Context, index, 0x00678 >> 2, 0x00000000, 1, gcvFALSE, gcvFALSE);
-    index += _State(Context, index, 0x0067C >> 2, 0xFFFFFFFF, 1, gcvFALSE, gcvFALSE);
+
+    if (halti1)
+    {
+        index += _State(Context, index, 0x00678 >> 2, 0x00000000, 1, gcvFALSE, gcvFALSE);
+        index += _State(Context, index, 0x0067C >> 2, 0xFFFFFFFF, 1, gcvFALSE, gcvFALSE);
+    }
+
     index += _CLOSE_RANGE();
 
     if (hasRobustness)
@@ -4156,12 +4161,6 @@ _DestroyContext(
             /* Destroy the signal. */
             if (buffer->signal != gcvNULL)
             {
-                /* Wait until the context buffer becomes available;
-                   this avoid GPU hang due to context command corruption */
-                gcmkONERROR(gckOS_WaitSignal(
-                    Context->os, buffer->signal, gcvFALSE, gcvINFINITE
-                ));
-
                 gcmkONERROR(gckOS_DestroySignal(
                     Context->os, buffer->signal
                     ));
@@ -4173,6 +4172,11 @@ _DestroyContext(
             if (buffer->logical != gcvNULL)
             {
                 gckKERNEL kernel = Context->hardware->kernel;
+
+#if gcdCAPTURE_ONLY_MODE
+                gceDATABASE_TYPE dbType;
+                gctUINT32 processID;
+#endif
 
                 /* End cpu access. */
                 gcmkVERIFY_OK(gckVIDMEM_NODE_UnlockCPU(
@@ -4190,6 +4194,21 @@ _DestroyContext(
                     0,
                     gcvNULL
                     ));
+
+#if gcdCAPTURE_ONLY_MODE
+                /* Encode surface type and pool to database type. */
+                dbType = gcvDB_VIDEO_MEMORY
+                       | (gcvVIDMEM_TYPE_GENERIC << gcdDB_VIDEO_MEMORY_TYPE_SHIFT)
+                       | (buffer->videoMem->pool << gcdDB_VIDEO_MEMORY_POOL_SHIFT);
+
+                gcmkONERROR(gckOS_GetProcessID(&processID));
+
+                gcmkONERROR(
+                    gckKERNEL_RemoveProcessDB(kernel,
+                        processID,
+                        dbType,
+                        buffer->videoMem));
+#endif
 
                 /* Free video memory. */
                 gcmkVERIFY_OK(gckVIDMEM_NODE_Dereference(
@@ -4218,7 +4237,7 @@ OnError:
     return status;
 }
 
-#if (gcdENABLE_3D || gcdENABLE_2D)
+#if (gcdENABLE_3D)
 static gceSTATUS
 _AllocateContextBuffer(
     IN gckCONTEXT Context,
@@ -4230,6 +4249,11 @@ _AllocateContextBuffer(
     gcePOOL pool = gcvPOOL_DEFAULT;
     gctSIZE_T totalSize = Context->totalSize;
     gctUINT32 allocFlag = 0;
+
+#if gcdCAPTURE_ONLY_MODE
+    gceDATABASE_TYPE dbType;
+    gctUINT32 processID;
+#endif
 
 #if gcdENABLE_CACHEABLE_COMMAND_BUFFER
     allocFlag = gcvALLOC_FLAG_CACHEABLE;
@@ -4245,6 +4269,26 @@ _AllocateContextBuffer(
         &pool,
         &Buffer->videoMem
         ));
+
+#if gcdCAPTURE_ONLY_MODE
+    gcmkONERROR(gckVIDMEM_HANDLE_Allocate(kernel, Buffer->videoMem, &Context->buffer->handle));
+
+    /* Encode surface type and pool to database type. */
+    dbType = gcvDB_VIDEO_MEMORY
+           | (gcvVIDMEM_TYPE_GENERIC << gcdDB_VIDEO_MEMORY_TYPE_SHIFT)
+           | (pool << gcdDB_VIDEO_MEMORY_POOL_SHIFT);
+
+    gcmkONERROR(gckOS_GetProcessID(&processID));
+
+    /* Record in process db. */
+    gcmkONERROR(
+            gckKERNEL_AddProcessDB(kernel,
+                                   processID,
+                                   dbType,
+                                   Buffer->videoMem,
+                                   gcvNULL,
+                                   totalSize));
+#endif
 
     /* Lock for GPU access. */
     gcmkONERROR(gckVIDMEM_NODE_Lock(
@@ -4296,7 +4340,7 @@ OnError:
 **          Pointer to a variable thet will receive the gckCONTEXT object
 **          pointer.
 */
-#if (gcdENABLE_3D || gcdENABLE_2D)
+#if (gcdENABLE_3D)
 gceSTATUS
 gckCONTEXT_Construct(
     IN gckOS Os,
@@ -4625,6 +4669,7 @@ gckCONTEXT_Update(
     gcsCONTEXT_PTR buffer;
     gcsSTATE_MAP_PTR map;
     gctBOOL needCopy = gcvFALSE;
+    gcsSTATE_DELTA_PTR nDelta;
     gcsSTATE_DELTA_PTR uDelta = gcvNULL;
     gcsSTATE_DELTA_PTR kDelta = gcvNULL;
     gcsSTATE_DELTA_RECORD_PTR record;
@@ -4666,18 +4711,20 @@ gckCONTEXT_Update(
         = (gctUINT32)gcmPTR2INT32(Context);
 #endif
 
-    if (StateDelta != gcvNULL)
+    /* Are there any pending deltas? */
+    if (buffer->deltaCount != 0)
     {
         /* Get the state map. */
         map = Context->map;
 
         /* Get the first delta item. */
-        uDelta = StateDelta;
+        uDelta = buffer->delta;
 
         /* Reset the vertex stream count. */
         elementCount = 0;
 
         /* Merge all pending deltas. */
+        for (i = 0; i < buffer->deltaCount; i += 1)
         {
             /* Get access to the state delta. */
             gcmkONERROR(gckKERNEL_OpenUserData(
@@ -4806,6 +4853,13 @@ gckCONTEXT_Update(
                 elementCount = kDelta->elementCount;
             }
 
+            /* Dereference delta. */
+            kDelta->refCount -= 1;
+            gcmkASSERT(kDelta->refCount >= 0);
+
+            /* Get the next state delta. */
+            nDelta = gcmUINT64_TO_PTR(kDelta->next);
+
             if (dirtyRecordArraySize)
             {
                 /* Get access to the state records. */
@@ -4826,6 +4880,9 @@ gckCONTEXT_Update(
                 uDelta, gcmSIZEOF(gcsSTATE_DELTA),
                 (gctPOINTER *) &kDelta
                 ));
+
+            /* Update the user delta pointer. */
+            uDelta = nDelta;
         }
 
         /* Hardware disables all input attribute when the attribute 0 is programmed,
@@ -5061,8 +5118,73 @@ gckCONTEXT_Update(
             _UpdateUnifiedReg(Context, 0x5600, numSamplers, samplerCount);
             _UpdateUnifiedReg(Context, 0x5680, numSamplers, samplerCount);
         }
+        /* Reset pending deltas. */
+        buffer->deltaCount = 0;
+        buffer->delta      = gcvNULL;
     }
 
+    if (StateDelta)
+    {
+        /* Set state delta user pointer. */
+        uDelta = StateDelta;
+
+        /* Get access to the state delta. */
+        gcmkONERROR(gckKERNEL_OpenUserData(
+            kernel, needCopy,
+            &_stateDelta,
+            uDelta, gcmSIZEOF(gcsSTATE_DELTA),
+            (gctPOINTER *) &kDelta
+            ));
+
+        /* State delta cannot be attached to anything yet. */
+        if (kDelta->refCount != 0)
+        {
+            gcmkTRACE(
+                gcvLEVEL_ERROR,
+                "%s(%d): kDelta->refCount = %d (has to be 0).\n",
+                __FUNCTION__, __LINE__,
+                kDelta->refCount
+                );
+        }
+
+        /* Attach to all contexts. */
+        buffer = Context->buffer;
+
+        do
+        {
+            /* Attach to the context if nothing is attached yet. If a delta
+               is allready attached, all we need to do is to increment
+               the number of deltas in the context. */
+            if (buffer->delta == gcvNULL)
+            {
+                buffer->delta = uDelta;
+            }
+
+            /* Update reference count. */
+            kDelta->refCount += 1;
+
+            /* Update counters. */
+            buffer->deltaCount += 1;
+
+            /* Get the next context buffer. */
+            buffer = buffer->next;
+
+            if (buffer == gcvNULL)
+            {
+                gcmkONERROR(gcvSTATUS_NOT_FOUND);
+            }
+        }
+        while (Context->buffer != buffer);
+
+        /* Close access to the current state delta. */
+        gcmkONERROR(gckKERNEL_CloseUserData(
+            kernel, needCopy,
+            gcvTRUE,
+            uDelta, gcmSIZEOF(gcsSTATE_DELTA),
+            (gctPOINTER *) &kDelta
+            ));
+
+    }
     /* Schedule an event to mark the context buffer as available. */
     gcmkONERROR(gckEVENT_Signal(
         buffer->eventObj, buffer->signal, gcvKERNEL_PIXEL
