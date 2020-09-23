@@ -4030,12 +4030,104 @@ static void _dmabuf_kunmap(struct dma_buf *dmabuf, unsigned long offset, void *p
 }
 #endif
 
+static gceSTATUS
+_DmaBufCacheOperation(
+    IN gckVIDMEM_NODE NodeObject,
+    IN gceCACHEOPERATION Operation
+    )
+{
+    gceSTATUS status = gcvSTATUS_OK;
+    gctPHYS_ADDR physHandle = gcvNULL;
+    gctPOINTER logical = gcvNULL;
+    gctSIZE_T offset = 0;
+    gctSIZE_T size = 0;
+    gcuVIDMEM_NODE_PTR node = NodeObject->node;
+    gckVIDMEM_BLOCK vidMemBlock = node->VirtualChunk.parent;
+    gctUINT32 processID;
+    gckOS_GetProcessID(&processID);
+
+    if (node->VidMem.parent->object.type == gcvOBJ_VIDMEM)
+    {
+        /* Reserved pool can't be cacheable */
+        gcmkONERROR(gcvSTATUS_OK);
+    }
+    else if (vidMemBlock && vidMemBlock->object.type == gcvOBJ_VIDMEM_BLOCK)
+    {
+        physHandle = vidMemBlock->physical;
+        offset = node->VirtualChunk.offset;
+        size = node->VirtualChunk.bytes;
+        logical = node->VirtualChunk.logical;
+    }
+    else
+    {
+        physHandle = node->Virtual.physical;
+        size = node->Virtual.bytes;
+        logical = node->Virtual.logical;
+    }
+
+    switch (Operation)
+    {
+        case gcvCACHE_CLEAN:
+            gcmkONERROR(gckOS_CacheClean(NodeObject->kernel->os, processID,
+                physHandle, offset, logical, size));
+            break;
+        case gcvCACHE_INVALIDATE:
+            gcmkONERROR(gckOS_CacheInvalidate(NodeObject->kernel->os, processID,
+                physHandle, offset, logical, size));
+            break;
+        case gcvCACHE_FLUSH:
+            gcmkONERROR(gckOS_CacheFlush(NodeObject->kernel->os, processID,
+                physHandle, offset, logical, size));
+            break;
+        default:
+            gcmkONERROR(gcvSTATUS_INVALID_ARGUMENT);
+            break;
+    }
+
+OnError:
+    return status;
+}
+
+static int _dmabuf_begin_cpu_access(struct dma_buf *dmabuf,
+                    enum dma_data_direction direction)
+{
+    gceSTATUS status = gcvSTATUS_OK;
+
+    if (direction == DMA_BIDIRECTIONAL || direction == DMA_FROM_DEVICE) {
+        /* CPU read, invalidate caches. */
+        gcmkONERROR(_DmaBufCacheOperation(dmabuf->priv, gcvCACHE_INVALIDATE));
+    }
+
+OnError:
+    return gcmIS_ERROR(status) ? -EINVAL : 0;
+}
+
+static int _dmabuf_end_cpu_access(struct dma_buf *dmabuf,
+                      enum dma_data_direction direction)
+{
+    gceSTATUS status = gcvSTATUS_OK;
+
+    if (direction == DMA_BIDIRECTIONAL || direction == DMA_TO_DEVICE) {
+        /* Flush caches on CPU write. */
+        if (direction == DMA_BIDIRECTIONAL) {
+            gcmkONERROR(_DmaBufCacheOperation(dmabuf->priv, gcvCACHE_FLUSH));
+        } else {
+            gcmkONERROR(_DmaBufCacheOperation(dmabuf->priv, gcvCACHE_CLEAN));
+        }
+    }
+
+OnError:
+    return gcmIS_ERROR(status) ? -EINVAL : 0;
+}
+
 static struct dma_buf_ops _dmabuf_ops =
 {
     .map_dma_buf = _dmabuf_map,
     .unmap_dma_buf = _dmabuf_unmap,
     .mmap = _dmabuf_mmap,
     .release = _dmabuf_release,
+    .begin_cpu_access = _dmabuf_begin_cpu_access,
+    .end_cpu_access = _dmabuf_end_cpu_access,
 #if LINUX_VERSION_CODE > KERNEL_VERSION(5,5,7)
 #  elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,19,0)
     .map = _dmabuf_kmap,

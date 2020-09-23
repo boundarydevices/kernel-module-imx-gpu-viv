@@ -112,6 +112,7 @@ struct gfp_mdl_priv
     };
 
     gcsPLATFORM * platform;
+    gctBOOL alloc_cacheable;
 };
 
 /******************************************************************************\
@@ -696,6 +697,7 @@ _GFPAlloc(
 
     mdlPriv->platform = Allocator->os->device->platform;
     mdlPriv->contiguous = contiguous;
+    mdlPriv->alloc_cacheable = (Flags & gcvALLOC_FLAG_CACHEABLE) != 0;
     atomic_add(low, &priv->low);
     atomic_add(high, &priv->high);
 
@@ -900,6 +902,7 @@ _GFPMmap(
 
     vma->vm_flags |= gcdVM_FLAGS;
 
+    Cacheable |= mdlPriv->alloc_cacheable;
     if (Cacheable == gcvFALSE)
     {
         /* Make this mapping non-cached. */
@@ -1020,8 +1023,11 @@ _GFPMapUser(
 {
     gctPOINTER userLogical = gcvNULL;
     gceSTATUS status = gcvSTATUS_OK;
+    struct gfp_mdl_priv *mdlPriv = (struct gfp_mdl_priv*)Mdl->priv;
 
     gcmkHEADER_ARG("Allocator=%p Mdl=%p Cacheable=%d", Allocator, Mdl, Cacheable);
+
+    Cacheable |= mdlPriv->alloc_cacheable;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
     userLogical = (gctPOINTER)vm_mmap(NULL,

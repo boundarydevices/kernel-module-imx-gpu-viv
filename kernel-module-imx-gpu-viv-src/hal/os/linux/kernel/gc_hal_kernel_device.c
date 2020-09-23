@@ -59,6 +59,7 @@
 #include <linux/seq_file.h>
 #include <linux/mman.h>
 #include <linux/slab.h>
+#include <linux/sched.h>
 
 #define _GC_OBJ_ZONE    gcvZONE_DEVICE
 
@@ -222,7 +223,7 @@ int gc_meminfo_show(struct seq_file* m, void* data)
 
             counter = &database->nonPaged;
             nonPagedCounter.bytes += counter->bytes;
-            nonPagedCounter.bytes += counter->maxBytes;
+            nonPagedCounter.maxBytes += counter->maxBytes;
         }
     }
 
@@ -231,7 +232,7 @@ int gc_meminfo_show(struct seq_file* m, void* data)
 
     seq_printf(m, "  POOL VIRTUAL:\n");
     seq_printf(m, "    Used :    %10llu B\n", virtualCounter.bytes);
-    seq_printf(m, "    MaxUsed : %10llu B\n", virtualCounter.bytes);
+    seq_printf(m, "    MaxUsed : %10llu B\n", virtualCounter.maxBytes);
 
     return 0;
 }
@@ -1960,6 +1961,9 @@ _StartThread(
 
         device->threadCtxts[Core]         = task;
         device->threadInitializeds[Core] = device->kernels[Core]->threadInitialized = gcvTRUE;
+
+        /* Set highest non RT priority, same as work queues. */
+        set_user_nice(task, MIN_NICE);
     }
     else
     {
@@ -2127,6 +2131,9 @@ gckGALDEVICE_Construct(
         device->extSRAMBases[i] = Args->extSRAMBases[i];
         device->extSRAMSizes[i] = Args->extSRAMSizes[i];
     }
+
+    /* Ensure root debugfs dir is created before allocator init. */
+    gcmkONERROR(_DebugfsInit(device));
 
     /* Construct the gckOS object. */
     gcmkONERROR(gckOS_Construct(device, &device->os));
@@ -2336,8 +2343,6 @@ gckGALDEVICE_Construct(
     {
         device->contiguousPhysName = gcmPTR_TO_NAME(device->contiguousPhysical);
     }
-
-    gcmkONERROR(_DebugfsInit(device));
 
     /* Return pointer to the device. */
     *Device = galDevice = device;

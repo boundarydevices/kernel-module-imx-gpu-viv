@@ -1025,6 +1025,20 @@ gckKERNEL_AllocateVideoMemory(
         }
     }
 
+    if (*Pool == gcvPOOL_DEFAULT) {
+        switch (Type)
+        {
+            case gcvSURF_TYPE_UNKNOWN:
+            case gcvSURF_DEPTH:
+            case gcvSURF_RENDER_TARGET:
+            case gcvSURF_TEXTURE:
+                *Pool = gcvPOOL_VIRTUAL;
+                break;
+            default:
+                break;
+        }
+    }
+
 AllocateMemory:
 
 #if gcdCAPTURE_ONLY_MODE

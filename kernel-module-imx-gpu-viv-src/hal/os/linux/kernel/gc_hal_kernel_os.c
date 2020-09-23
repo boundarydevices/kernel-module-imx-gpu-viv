@@ -7066,6 +7066,7 @@ gckOS_MemoryMmap(
     gckALLOCATOR allocator;
     gceSTATUS status = gcvSTATUS_OK;
     gctBOOL cacheable = gcvFALSE;
+    gctBOOL locked = gcvFALSE;
 
     if (!Physical)
     {
@@ -7081,6 +7082,7 @@ gckOS_MemoryMmap(
     }
 
     mutex_lock(&mdl->mapsMutex);
+    locked = gcvTRUE;
 
     mdlMap = FindMdlMap(mdl, _GetProcessID());
     if (mdlMap)
@@ -7088,11 +7090,12 @@ gckOS_MemoryMmap(
         cacheable = mdlMap->cacheable;
     }
 
-    mutex_unlock(&mdl->mapsMutex);
-
     gcmkONERROR(gcmALLOCATOR_Mmap(allocator, mdl, cacheable, skipPages, numPages, Vma));
 
 OnError:
+    if (locked) {
+        mutex_unlock(&mdl->mapsMutex);
+    }
     return status;
 }
 
