@@ -69,6 +69,12 @@
 
 #define _GC_OBJ_ZONE    gcvZONE_OS
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+#define dma_alloc_wc   dma_alloc_writecombine
+#define dma_mmap_wc    dma_mmap_writecombine
+#define dma_free_wc    dma_free_writecombine
+#endif
+
 typedef struct _gcsCMA_PRIV * gcsCMA_PRIV_PTR;
 typedef struct _gcsCMA_PRIV {
     atomic_t cmasize;
@@ -163,7 +169,7 @@ _CMAFSLAlloc(
     }
 #endif
 
-    mdl_priv->kvaddr = dma_alloc_writecombine(&os->device->platform->device->dev,
+    mdl_priv->kvaddr = dma_alloc_wc(&os->device->platform->device->dev,
             NumPages * PAGE_SIZE,
             &mdl_priv->physical,
             gfp);
@@ -271,7 +277,7 @@ _CMAFSLFree(
     gckOS os = Allocator->os;
     struct mdl_cma_priv *mdlPriv=(struct mdl_cma_priv *)Mdl->priv;
     gcsCMA_PRIV_PTR priv = (gcsCMA_PRIV_PTR)Allocator->privateData;
-    dma_free_writecombine(&os->device->platform->device->dev,
+    dma_free_wc(&os->device->platform->device->dev,
             Mdl->numPages * PAGE_SIZE,
             mdlPriv->kvaddr,
             mdlPriv->physical);
@@ -351,7 +357,7 @@ _CMAFSLMmap(
                     }
             }
         } else {
-            if (dma_mmap_writecombine(&os->device->platform->device->dev,
+            if (dma_mmap_wc(&os->device->platform->device->dev,
                     vma,
                     (gctINT8_PTR)mdlPriv->kvaddr + (skipPages << PAGE_SHIFT),
                     mdlPriv->physical + (skipPages << PAGE_SHIFT),
